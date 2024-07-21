@@ -2,11 +2,11 @@
 #include <ESP8266HTTPClient.h>
 
 // Configuración del WiFi
-const char* ssid = "Megacable_2.4G_265E";
-const char* password = "";
+const char* ssid = "Megacable_2.4G_265E"; //Red Wifi
+const char* password = ""; //Contraseña Wifi
 
 // URL del servidor donde enviar los datos
-const char* serverName = "http://192.168.1.8:8080/infoUltrasonico"; // Cambia por tu dirección
+const char* serverName = "http://134.209.35.1/api/sensores"; // Cambiar dirección
 
 #define TRIG_PIN 14
 #define ECHO_PIN 12
@@ -32,10 +32,9 @@ void setup() {
 void loop() {
   // Variables para la medición de distancia
   long duration;
-  int distance;
   // Generar un pulso en el pin Trig
   digitalWrite(TRIG_PIN, LOW);  //para generar un pulso limpio ponemos a LOW 4us
-  delayMicroseconds(4);
+  delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);  //generamos Trigger (disparo) de 10us
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
@@ -45,11 +44,28 @@ void loop() {
   duration = pulseIn(ECHO_PIN, HIGH);
 
   // Calcular la distancia en cm
-  distance = duration * 10 / 292/ 2;   //convertimos a distancia, en cm
+  float distance = (duration * 0.0343) / 2;   //convertimos a distancia, en cm
+
+  String nivel = "";
+  if(distance < 21.51){
+    nivel = "vacio";
+  }
+  else if(distance < 24.1){
+    nivel = "bajo";
+  }
+  else if(distance < 26.3){
+    nivel = "medio";
+  }
+  else{
+    nivel = "lleno";
+  }
+
   
   Serial.print("distance: ");
   Serial.print(distance);
-  Serial.println("cm");
+  Serial.print("cm");
+  Serial.print(", Nivel: ");
+  Serial.println(nivel);
   
   
   // Enviar los datos a la API
@@ -67,7 +83,7 @@ void loop() {
     http.addHeader("Content-Type", "application/json");
 
     // Crear el JSON para enviar
-    String httpRequestData = "{\"distance\":\"" + String(distance) + "\"}";
+    String httpRequestData = "{\"sensor_id\":\"sensor_01\",\"value\":\"" + String(distance) + "\", \"nivel\":\"" + nivel + "\"}";
 
     // Enviar solicitud POST
     int httpResponseCode = http.POST(httpRequestData);
@@ -89,5 +105,5 @@ void loop() {
   }
 
   // Esperar antes de la próxima medición
-  delay(2000); // 2 segundos
+  delay(5000); // 5 segundos
 }
