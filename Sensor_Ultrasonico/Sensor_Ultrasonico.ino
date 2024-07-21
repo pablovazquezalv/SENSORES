@@ -3,7 +3,7 @@
 
 // Configuración del WiFi
 const char* ssid = "Megacable_2.4G_265E";
-const char* password = "6e2nd3i4";
+const char* password = "";
 
 // URL del servidor donde enviar los datos
 const char* serverName = "http://192.168.1.8:8080/infoUltrasonico"; // Cambia por tu dirección
