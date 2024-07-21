@@ -1,108 +1,93 @@
-#include <WiFi.h>
-#include <WebServer.h>
-#include <ArduinoJson.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 
-#define TRIGGER 2
-#define ECHO    4
+// Configuración del WiFi
+const char* ssid = "Megacable_2.4G_265E";
+const char* password = "6e2nd3i4";
 
-int intDistance;
-int intTime;
-int intVolume = 0;
-int intFull = 30;
-int intEmpty = 120;
-int intCapacity = 0;
-int intTankRadiusCm = 50;
-int intLevelCm = 0;
-int intLevel = 0;
-float floatListersPerCm = 0.0;
-float floatSpeedOfSoundCMPMS = 0.0;
+// URL del servidor donde enviar los datos
+const char* serverName = "http://192.168.1.8:8080/infoUltrasonico"; // Cambia por tu dirección
 
-const char* ssid = "NOMBRE_RED";
-const char* password = "PASSWORD_RED";
-
-const int SerialSpeed = 115200;
-const int tempAvg = 20;
-const float SpeedOfSoundMPS = 331 + (tempAvg*0.6);
-
-IPAddress ip(192,168,0,103);
-IPAddress gateway(192,168,0,1);
-IPAddress subnet(255,155,255,0);
-WebSever server(80);
-StaticJsonDocument<250> jsonDocument;
-char bufferJson[250];
+#define TRIG_PIN 14
+#define ECHO_PIN 12
 
 void setup() {
-  // put your setup code here, to run once:
-  floatSpeedOfSoundCMPMS = SpeedOfSoundMPS * 100/1000000;
-  floatListersPerCm = PI*(intTankRadiusCm*intTankRadiusCm)/1000;
-  intCapacity = intEmpty-intFull;
-  Serial.begin(SerialSpeed);
-  Serial.print("Capacity: "); Serial.println(intCapacity);
-  Serial.print("Speed of sound Cm per uS: "); Serial.println(floatSpeedOfSoundCMPMS);
-  Serial.print("Listers per cm: "); Serial.println(floatListersPerCm);
-  pinMode(TRIGGER, OUTPUT);
-  pinMode(ECHO, INPUT_PULLUP);
-  WiFi.config(ip, gateway, subnet);
-  WiFi.begin(ssid,password);
-  Serial.print("Connecting to WiFi:");
-  while(WiFi.status()!=WL_CONNECTED)
-  {
-    Serial.print(".");
+  // Inicializar el puerto serial
+  Serial.begin(9600);
+  
+  // Configurar los pines del sensor
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  // Conectar al WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Conectando a WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    Serial.print(".");
   }
-  Serial.println("\nConnected to WiFi");
-  server.on("/tankStatus", getTankStatus);
-  server.begin();
+  Serial.println("Conectado al WiFi");
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  digitalWrite(TRIGGER,HIGH);
-  delayMicroseconds(15);
-  digitalWrite(TRIGGER,LOW);
-  intTime = pulseIn(ECHO,HIGH);
-  intTime = intTime/2;
-  intDistance = intTime*floatSpeedOfSoundCMPMS;
+  // Variables para la medición de distancia
+  long duration;
+  int distance;
+  // Generar un pulso en el pin Trig
+  digitalWrite(TRIG_PIN, LOW);  //para generar un pulso limpio ponemos a LOW 4us
+  delayMicroseconds(4);
+  digitalWrite(TRIG_PIN, HIGH);  //generamos Trigger (disparo) de 10us
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
 
-  if(intDistance != 0)
-  {
-    intLevelCm = intEmpty - intDistance;
-    if(intLevelCm < 0)
-      intLevelCm = 0;
-    if(intLevelCm < intCapacity)
-      intLevelCm = intCapacity;
-    Serial.print("Nivel en CM: "); Serial.println(intLevelCm);
-    intLevel=(float(intLevelCm)/float(intCapacity)) * 100;
-    Serial.print("Nivel: "); Serial.print(intLevel); Serial.println("%");
-    intVolume = intLevelCm*floatListersPerCm;
-    Serial.print("Volume: "); Serial.println(intVolume);
-  }
-  else
-  {
-    intLevel=-1;
-    intVolume=-1;
+
+  // Medir el tiempo del pulso en el pin Echo
+  duration = pulseIn(ECHO_PIN, HIGH);
+
+  // Calcular la distancia en cm
+  distance = duration * 10 / 292/ 2;   //convertimos a distancia, en cm
+  
+  Serial.print("distance: ");
+  Serial.print(distance);
+  Serial.println("cm");
+  
+  
+  // Enviar los datos a la API
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    // Preparar la URL para la solicitud HTTP POST
+    String url = serverName;
+
+    // Iniciar la conexión HTTP con WiFiClient
+    WiFiClient client; // Crear instancia de WiFiClient
+    http.begin(client, url); // Pasar WiFiClient como referencia
+
+    // Especificar el tipo de contenido
+    http.addHeader("Content-Type", "application/json");
+
+    // Crear el JSON para enviar
+    String httpRequestData = "{\"distance\":\"" + String(distance) + "\"}";
+
+    // Enviar solicitud POST
+    int httpResponseCode = http.POST(httpRequestData);
+
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+      Serial.print("Código de respuesta HTTP: ");
+      Serial.println(httpResponseCode);
+      //Serial.println(response);
+    } else {
+      Serial.print("Error en la solicitud HTTP: ");
+      Serial.println(httpResponseCode);
+    }
+
+    // Finalizar la conexión
+    http.end();
+  } else {
+    Serial.println("Error en la conexión WiFi");
   }
 
-  if(Wifi.status() == WL_CONNECTED)
-  {
-    server.handleClient();
-  }
-  else
-  {
-    Serial.println("Connection lost");
-    WiFi.disconnect();
-    WiFi.reconnect();
-  }
-  delay(500);
-
-}
-
-void getTankStatus()
-{
-  Serial.println("Get Tank Status");
-  jsonDocument.clear();
-  jsonDocument["level"] = intLevel;
-  jsonDocument["volume"] = intVolume;
-  serializeJson(jsonDocument,bufferJson);
-  server.send(200, "application/json", bufferJson);
+  // Esperar antes de la próxima medición
+  delay(2000); // 2 segundos
 }
